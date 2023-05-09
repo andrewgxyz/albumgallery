@@ -32,7 +32,7 @@ Options");
 The default config is mainly the folder location for your music collection and the height which default being the 4K height for 16:9. The config file is stored in your `.config` folder on Linux under the same name, this will be updated once I have a better idea of the Windows and MacOS environments
 
 ```
-folder = "~/music"
+folder = "~/Music"
 height = 2160
 ```
 

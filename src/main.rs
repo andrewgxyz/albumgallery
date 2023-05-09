@@ -52,7 +52,7 @@ struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         AppConfig { 
-            folder: ("~/music").to_string(),
+            folder: ("~/Music").to_string(),
             height: 2160
         }
     }
