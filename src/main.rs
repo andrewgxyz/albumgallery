@@ -372,9 +372,10 @@ fn find_matching_geometry(tile: &GridTile, height: u32) -> u32 {
 fn main() -> Result<(), confy::ConfyError> {
     // Load config file
     let cfg: AppConfig = confy::load("albumgallery", "config")?;
+    let home = env::var_os("HOME").unwrap().into_string().unwrap();
     let args = get_args();
 
-    let mut cover_data = open_json_file("/home/andrew/.local/share/albumgallery/covers.json").unwrap();
+    let mut cover_data = open_json_file(&(home.clone() + "/.local/share/albumgallery/covers.json")).unwrap();
     
     // Current a list of file directories
     let files = get_cover_list(cfg.folder).unwrap();
@@ -481,12 +482,12 @@ fn main() -> Result<(), confy::ConfyError> {
         };
     }
 
-    serde_json::to_writer(&File::create("/home/andrew/.local/share/albumgallery/covers.json").unwrap(), &cover_data).ok();
+    serde_json::to_writer(&File::create(&(home.clone() + "/.local/share/albumgallery/covers.json")).unwrap(), &cover_data).ok();
 
     match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
         Ok(elapsed) => {
             let secs = elapsed.as_secs().to_string();
-            let collage_filename: String = format!("/home/andrew/picx/{}.jpg", secs);
+            let collage_filename: String = format!("{}/picx/{}.jpg", home, secs);
 
             // Run montage command here
             let status = &command.args(&files)
