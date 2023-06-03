@@ -12,9 +12,10 @@ struct VecColor {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Rgb {
-    r: u8, g: u8, b: u8,
+    r: f32, g: f32, b: f32,
 }
 
+#[allow(dead_code)]
 struct Hsv {
     h: f32, s: f32, v: f32,
 }
@@ -44,7 +45,8 @@ struct TagStruc {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct AppConfig {
-    folder: String,
+    music_folder: String,
+    output_folder: String,
     height: u32,
 }
 
@@ -52,7 +54,8 @@ struct AppConfig {
 impl Default for AppConfig {
     fn default() -> Self {
         AppConfig { 
-            folder: ("~/Music").to_string(),
+            music_folder: ("~/Music").to_string(),
+            output_folder: ("~/Pictures").to_string(),
             height: 2160
         }
     }
@@ -101,7 +104,6 @@ fn get_args() -> Vec<String> {
             "-d" | "--decade" => args_key[3] = get_arg_value(&args, key),
             "-s" | "--asc" => args_key[4] = get_arg_value(&args, key),
             "-S" | "--desc" => args_key[5] = get_arg_value(&args, key),
-            "-m" | "--mobile" => args_key[6] = "true".to_string(),
             _ => continue,
         }
     }
@@ -199,48 +201,28 @@ fn get_music_tags(folder: String) -> Vec<TagStruc> {
     vec![]
 }
 
-const HIST_SIZE: usize = (1 << 24) as usize;
-
-fn find_dominant_color(img_pixel_vec: &[u8]) -> Rgb {
-    let mut histogram: Vec<i32> = (0..HIST_SIZE).map(|_| 0).collect();
-
+fn get_average_color(img_pixel_vec: &[u8]) -> Rgb {
     // Loop through each pixel and save each as an RGB
     let mut i = 0;
     let pixel_count = img_pixel_vec.len() / 3;
+    let mut r_total = 0.00;
+    let mut g_total = 0.00;
+    let mut b_total = 0.00;
+
     while i < pixel_count {
         let pos = i * 3;
 
         // Convert 3 current bytes to one byte that can work with RGB
-        let r = img_pixel_vec[pos] + 1;
-        let g = img_pixel_vec[pos + 1] - 1;
-        let b = img_pixel_vec[pos + 2] - 1;
+        r_total += img_pixel_vec[pos] as f32 + 1 as f32;
+        g_total += img_pixel_vec[pos + 1] as f32 - 1 as f32;
+        b_total += img_pixel_vec[pos + 2] as f32 - 1 as f32;
 
-        let hex: String = format!("{:#02x}{:#02x}{:#02x}", r, g, b).replace("0x", "");
-
-        let z = i64::from_str_radix(&hex.to_string(), 16).unwrap();
-
-        // let color_byte = (((r as i32) << 10) + ((g as i32) << 5) + b as i32) as usize;
-
-        histogram[z as usize] += 1;
-
-        i += 1;
+        i += 1
     }
 
-    // Count how many color per-pixel shows up
-    let mut index: usize = 0;
-    let mut count = 0;
-
-    for hist in histogram.iter().copied() {
-        if hist >= count {
-            count = hist;
-            index = histogram.iter().position(|x| x.eq(&hist)).unwrap();
-        }
-    }
-
-    // Then converts everything back to RGB individually
-    let r = (index / (256 * 256)) as u8;
-    let g = ((index / 256) % 256) as u8;
-    let b = (index % 256) as u8;
+    let r = (r_total / 107584.00) as f32;
+    let g = (g_total / 107584.00) as f32;
+    let b = (b_total / 107584.00) as f32;
 
     Rgb { r, g, b }
 }
@@ -283,8 +265,6 @@ fn rgb_to_hsv(r: f32, g: f32, b: f32) -> Hsv {
     Hsv { h, s, v }
 }
 
-// WARNING: Might need to redo the step-sorting, the ordering seems to follow the artist order for
-// the most part
 fn sort_step_index(r: f32, g: f32, b: f32) -> i32 {
     let mut lum: f32 = lum(r, g, b);
     let hsv: Hsv = rgb_to_hsv(r, g, b);
@@ -310,7 +290,7 @@ fn select_sort (arr: &VecColor, arg: String) -> i32 {
     return match arg.as_str() {
         "rgb" => sort_rgb_index(arr.color.r as f32, arr.color.g as f32, arr.color.b as f32),
         "step" => sort_step_index(arr.color.r as f32, arr.color.g as f32, arr.color.b as f32),
-        "year" => arr.tags.date.parse::<i32>().unwrap() as i32,
+        "year" => arr.tags.date.parse::<i32>().unwrap(),
         "lum" => lum(arr.color.r as f32, arr.color.g as f32, arr.color.b as f32) as i32,
         _ => sort_rgb_index(arr.color.r as f32, arr.color.g as f32, arr.color.b as f32),
     };
@@ -369,16 +349,42 @@ fn find_matching_geometry(tile: &GridTile, height: u32) -> u32 {
     height / tile.height as u32
 }
 
+fn generate_collage_name(args: Vec<String>) -> String {
+    let mut subject = "all";
+    let mut sort_type = "rgb";
+
+    if args[0] != "" {
+        subject = "genre";
+    } else if args[1] != "" {
+        subject = "artist";
+    } else if args[2] != "" {
+        subject = "year"
+    } else if args[3] != "" {
+        subject = "decade";
+    }
+
+    if args[4] != "" {
+        sort_type = &args[4];
+    }
+
+    if args[5] != "" {
+        sort_type = &args[5];
+    }
+
+    format!("{}-{}", subject, sort_type).to_string()
+}
+
 fn main() -> Result<(), confy::ConfyError> {
     // Load config file
     let cfg: AppConfig = confy::load("albumgallery", "config")?;
     let home = env::var_os("HOME").unwrap().into_string().unwrap();
     let args = get_args();
+    let output_folder = cfg.output_folder.replace('~', &home);
 
     let mut cover_data = open_json_file(&(home.clone() + "/.local/share/albumgallery/covers.json")).unwrap();
     
     // Current a list of file directories
-    let files = get_cover_list(cfg.folder).unwrap();
+    let files = get_cover_list(cfg.music_folder).unwrap();
     let mut cover_list: Vec<CoverFile> = vec![];
 
     for file in files {
@@ -441,10 +447,10 @@ fn main() -> Result<(), confy::ConfyError> {
                     .unwrap()
                     .resize(328, 328, image::imageops::FilterType::Nearest);
                 let img_rbg8 = img.into_bytes();
-                let dominant = find_dominant_color(&img_rbg8);
+                let avg = get_average_color(&img_rbg8);
 
                 VecColor {
-                    color: dominant,
+                    color: avg,
                     tags: cover.tags,
                     file: cover.file.to_string(),
                 } 
@@ -455,7 +461,7 @@ fn main() -> Result<(), confy::ConfyError> {
     }
 
     // // Sort each value by corresponding color hue
-    cover_sort(&mut colors, args);
+    cover_sort(&mut colors, args.clone());
 
     let mut files: Vec<String> = vec![];
     let tile = find_matching_tile(colors.len());
@@ -482,12 +488,13 @@ fn main() -> Result<(), confy::ConfyError> {
         };
     }
 
-    serde_json::to_writer(&File::create(&(home.clone() + "/.local/share/albumgallery/covers.json")).unwrap(), &cover_data).ok();
+    serde_json::to_writer(&File::create(home.clone() + "/.local/share/albumgallery/covers.json").unwrap(), &cover_data).ok();
 
     match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
         Ok(elapsed) => {
             let secs = elapsed.as_secs().to_string();
-            let collage_filename: String = format!("{}/picx/{}.jpg", home, secs);
+            let collage_type = generate_collage_name(args.clone());
+            let collage_filename: String = format!("{}/{}.jpg", output_folder, format!("{}-{}", secs, collage_type));
 
             // Run montage command here
             let status = &command.args(&files)
