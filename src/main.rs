@@ -1,5 +1,5 @@
 use glob::{glob_with, GlobError, MatchOptions};
-use lofty::{Accessor, Probe, TaggedFileExt};
+use lofty::{Accessor, Probe, TaggedFileExt, ItemKey};
 use serde::{Deserialize, Serialize};
 use std::{fs::File, io::BufReader, process::{exit, Command}, env, u8, time::SystemTime};
 
@@ -63,13 +63,14 @@ impl Default for AppConfig {
 
 fn print_docs() {
     eprintln!("Album Collage Generator\n\n");
-    eprintln!("Usage: albumgallery [flags] [options]\n\n");
+    eprintln!("Usage: accg [flags] [options]\n\n");
     eprintln!("Flags");
     eprintln!("    -h or --help\n");
     eprintln!("Options");
     eprintln!("    -g or --genres  <String> ex. \"Rock;Jazz;Dubstep\"");
     eprintln!("    -a or --artist  <String> ex. \"Green Day\" ");
     eprintln!("    -y or --year    <u8>     ex. 2012");
+    eprintln!("    -m or --month   <u8>     ex. 08");
     eprintln!("    -d or --decade  <u8>     ex. 2010");
     eprintln!("    -s or --asc     <rgb|year|lum|step>");
     eprintln!("    -S or --desc    <rgb|year|lum|step>");
@@ -82,12 +83,13 @@ fn get_args() -> Vec<String> {
     *   0 = genre
     *   1 = artist
     *   2 = year
-    *   3 = decade
-    *   4 = asc
-    *   5 = desc
+    *   3 = month
+    *   4 = decade
+    *   5 = asc
+    *   6 = desc
     *
     */
-    let mut args_key: Vec<String> = vec!("".to_string() ;6);
+    let mut args_key: Vec<String> = vec!("".to_string() ;7);
 
     // Print documentation
     if args.iter().any(|e| e == "-h") || args.iter().any(|e| e == "--help") {
@@ -101,9 +103,10 @@ fn get_args() -> Vec<String> {
             "-g" | "--genres" => args_key[0] = get_arg_value(&args, key),
             "-a" | "--artist" => args_key[1] = get_arg_value(&args, key),
             "-y" | "--year" => args_key[2] = get_arg_value(&args, key),
-            "-d" | "--decade" => args_key[3] = get_arg_value(&args, key),
-            "-s" | "--asc" => args_key[4] = get_arg_value(&args, key),
-            "-S" | "--desc" => args_key[5] = get_arg_value(&args, key),
+            "-m" | "--month" => args_key[3] = get_arg_value(&args, key),
+            "-d" | "--decade" => args_key[4] = get_arg_value(&args, key),
+            "-s" | "--asc" => args_key[5] = get_arg_value(&args, key),
+            "-S" | "--desc" => args_key[6] = get_arg_value(&args, key),
             _ => continue,
         }
     }
@@ -187,7 +190,7 @@ fn get_music_tags(folder: String) -> Vec<TagStruc> {
 
         let artist = tag.artist().unwrap_or_default().to_string();
         let album = tag.album().unwrap_or_default().to_string();
-        let date = tag.year().unwrap_or_default().to_string();
+        let date = tag.get_string(&ItemKey::RecordingDate).map(|s| s.to_string()).unwrap();
         let genres = tag.genre().unwrap_or_default().to_string();
 
         return vec![TagStruc {
@@ -304,16 +307,16 @@ fn cover_sort(arr: &mut Vec<VecColor>, args: Vec<String>) {
             let sort_a: i32;
             let sort_b: i32;
 
-            if !(args[5].is_empty()) {
-                sort_a = select_sort(a, args[5].to_string());
-                sort_b = select_sort(b, args[5].to_string());
+            if !(args[6].is_empty()) {
+                sort_a = select_sort(a, args[6].to_string());
+                sort_b = select_sort(b, args[6].to_string());
                 if sort_a < sort_b {
                     arr.swap(j + 1, j);
                 }
             } else {
-                if !(args[4].is_empty()) {
-                    sort_a = select_sort(a, args[4].to_string());
-                    sort_b = select_sort(b, args[4].to_string());
+                if !(args[5].is_empty()) {
+                    sort_a = select_sort(a, args[5].to_string());
+                    sort_b = select_sort(b, args[5].to_string());
                 } else {
                     sort_a = sort_step_index(a.color.r as f32, a.color.g as f32, a.color.b as f32);
                     sort_b = sort_step_index(b.color.r as f32, b.color.g as f32, b.color.b as f32);
@@ -360,15 +363,17 @@ fn generate_collage_name(args: Vec<String>) -> String {
     } else if args[2] != "" {
         subject = "year"
     } else if args[3] != "" {
+        subject = "month";
+    } else if args[4] != "" {
         subject = "decade";
-    }
-
-    if args[4] != "" {
-        sort_type = &args[4];
     }
 
     if args[5] != "" {
         sort_type = &args[5];
+    }
+
+    if args[6] != "" {
+        sort_type = &args[6];
     }
 
     format!("{}-{}", subject, sort_type).to_string()
@@ -376,12 +381,12 @@ fn generate_collage_name(args: Vec<String>) -> String {
 
 fn main() -> Result<(), confy::ConfyError> {
     // Load config file
-    let cfg: AppConfig = confy::load("albumgallery", "config")?;
+    let cfg: AppConfig = confy::load("accg", "config")?;
     let home = env::var_os("HOME").unwrap().into_string().unwrap();
     let args = get_args();
     let output_folder = cfg.output_folder.replace('~', &home);
 
-    let mut cover_data = open_json_file(&(home.clone() + "/.local/share/albumgallery/covers.json")).unwrap();
+    let mut cover_data = open_json_file(&(home.clone() + "/.local/share/accg/covers.json")).unwrap();
     
     // Current a list of file directories
     let files = get_cover_list(cfg.music_folder).unwrap();
@@ -410,8 +415,17 @@ fn main() -> Result<(), confy::ConfyError> {
         }
 
         if !args[3].is_empty() {
+            let date: Vec<&str> = file.tags.date.as_str().split('-').collect();
+            print!("{} {}", date[1], args[3]);
+            
+            if date[1] != args[3] {
+                continue;
+            }
+        }
+
+        if !args[4].is_empty() {
             let date: Vec<char> = file.tags.date.chars().collect();
-            let arg_date: Vec<char> = args[3].chars().collect();
+            let arg_date: Vec<char> = args[4].chars().collect();
 
             if date.len() <= 1 {
                 continue;
@@ -488,7 +502,7 @@ fn main() -> Result<(), confy::ConfyError> {
         };
     }
 
-    serde_json::to_writer(&File::create(home.clone() + "/.local/share/albumgallery/covers.json").unwrap(), &cover_data).ok();
+    serde_json::to_writer(&File::create(home.clone() + "/.local/share/accg/covers.json").unwrap(), &cover_data).ok();
 
     match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
         Ok(elapsed) => {
