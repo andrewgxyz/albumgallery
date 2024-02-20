@@ -124,7 +124,8 @@ fn get_arg_value(args: &Vec<String>, key: usize) -> String {
     // if I want to convert values into different types
     let value: String = args[key+1].to_string();
 
-    // If the next key value is anything including a flag or empty then stop the program
+    // If the next key value is anything including a flag 
+    // or empty then stop the program
     if value.is_empty() || value.contains('-') || value.contains("--") {
         println!("{} is missing value", args[key]);
         exit(1);
@@ -318,8 +319,16 @@ fn cover_sort(arr: &mut Vec<VecColor>, args: Vec<String>) {
                     sort_a = select_sort(a, args[5].to_string());
                     sort_b = select_sort(b, args[5].to_string());
                 } else {
-                    sort_a = sort_step_index(a.color.r as f32, a.color.g as f32, a.color.b as f32);
-                    sort_b = sort_step_index(b.color.r as f32, b.color.g as f32, b.color.b as f32);
+                    sort_a = sort_step_index(
+                        a.color.r as f32, 
+                        a.color.g as f32, 
+                        a.color.b as f32
+                    );
+                    sort_b = sort_step_index(
+                        b.color.r as f32, 
+                        b.color.g as f32, 
+                        b.color.b as f32
+                    );
                 }
 
                 if sort_b < sort_a {
@@ -399,7 +408,8 @@ fn main() -> Result<(), confy::ConfyError> {
 
         // Add tag filters here
         if !args[0].is_empty() {
-            let genres: Vec<String> = file.tags.genres.split(';').map(|g| g.to_string()).collect();
+            let genres: Vec<String> = file.tags.genres.split(';')
+                .map(|g| g.to_string()).collect();
 
             if !genres.contains(&args[0]) {
                 continue;
@@ -502,7 +512,10 @@ fn main() -> Result<(), confy::ConfyError> {
         };
     }
 
-    serde_json::to_writer(&File::create(home.clone() + "/.local/share/accg/covers.json").unwrap(), &cover_data).ok();
+    serde_json::to_writer(
+        &File::create(home.clone() + "/.local/share/accg/covers.json").unwrap(), 
+        &cover_data
+    ).ok();
 
     match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
         Ok(elapsed) => {
